@@ -149,23 +149,20 @@ async function updateTestGroups(req, res) {
     console.log("➡️ [Backend] action:", action);
 
     if (!groupId || !["add", "remove"].includes(action)) {
-      console.warn("⚠️ [Backend] Некорректные параметры запроса:", {
-        testId,
-        groupId,
-        action,
-      });
       return res.status(400).json({ message: "Invalid request parameters" });
     }
 
+    // Проверяем существование теста
     const test = await Test.findById(testId);
-    if (!test) return res.status(404).json({ message: "Test not found" });
-    console.log("✅ [Backend] Тест найден:", testId);
+    if (!test) {
+      return res.status(404).json({ message: "Test not found" });
+    }
 
-    const group = await Group.findById(groupId).populate("members", "_id");
-    if (!group) return res.status(404).json({ message: "Group not found" });
-    console.log("✅ [Backend] Группа найдена:", groupId);
-
-    const memberIds = group.members.map((m) => m._id.toString());
+    // Проверяем существование группы
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
 
     if (action === "add") {
       console.log(`📡 [Backend] Добавляем группу ${groupId} к тесту ${testId}`);
@@ -173,35 +170,12 @@ async function updateTestGroups(req, res) {
       if (!test.availableForGroups.some((id) => id.toString() === groupId)) {
         test.availableForGroups.push(groupId);
       }
-
-      console.log(
-        `📡 [Backend] Обновляем TestResult для пользователей:`,
-        memberIds
-      );
-
-      for (const userId of memberIds) {
-        await TestResult.updateOne(
-          { testId, userId },
-          { $set: { testId, userId } },
-          { upsert: true }
-        );
-      }
     } else if (action === "remove") {
       console.log(`📡 [Backend] Удаляем группу ${groupId} из теста ${testId}`);
 
       test.availableForGroups = test.availableForGroups.filter(
         (id) => id.toString() !== groupId
       );
-
-      console.log(
-        `📡 [Backend] Удаляем TestResult для пользователей:`,
-        memberIds
-      );
-
-      await TestResult.deleteMany({
-        testId,
-        userId: { $in: memberIds },
-      });
     }
 
     await test.save();
@@ -215,10 +189,11 @@ async function updateTestGroups(req, res) {
       availableForGroups: test.availableForGroups.map((g) => g.toString()),
     });
   } catch (error) {
-    console.error("❌ [Backend] Ошибка обновления групп:", error);
-    res
-      .status(500)
-      .json({ message: "Error updating test groups", error: error.message });
+    console.error("❌ [Backend] Ошибка обновления групп:", error.message);
+    res.status(500).json({
+      message: "Error updating test groups",
+      error: error.message,
+    });
   }
 }
 

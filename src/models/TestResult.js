@@ -1,4 +1,4 @@
-// src/models/TestResultconst 
+// src/models/TestResult 
 mongoose = require("mongoose");
 
 const testResultSchema = new mongoose.Schema({
