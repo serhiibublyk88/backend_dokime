@@ -28,21 +28,17 @@ async function createTest(req, res) {
       timeLimit,
       availableForGroups: groups.map((g) => g._id),
       status: status || "inactive",
-      minimumScores: minimumScores || {
-        1: 95,
-        2: 85,
-        3: 70,
-        4: 50,
-        5: 0,
-      },
+      minimumScores: minimumScores || { 1: 95, 2: 85, 3: 70, 4: 50, 5: 0 },
       author: req.user._id,
     });
 
     await newTest.save();
-    res.status(201).json({
-      message: "Test created successfully",
-      test: mapTestToDto(newTest),
-    });
+    res
+      .status(201)
+      .json({
+        message: "Test created successfully",
+        test: mapTestToDto(newTest),
+      });
   } catch (error) {
     res
       .status(500)
@@ -65,11 +61,10 @@ async function getAllTests(req, res) {
   }
 }
 
-// Получение списка всех групп + доступных групп у теста (для выпадающего списка)
+// Получение списка всех групп + доступных групп у теста
 async function getTestGroups(req, res) {
   try {
     const { testId } = req.params;
-
     const test = await Test.findById(testId).populate(
       "availableForGroups",
       "name"
@@ -100,105 +95,70 @@ async function updateTest(req, res) {
     const { testId } = req.params;
     const updateFields = {};
 
-    // Разбираем входные данные и обновляем только переданные поля
     ["title", "description", "timeLimit", "status", "minimumScores"].forEach(
       (field) => {
-        if (req.body[field] !== undefined) updateFields[field] = req.body[field];
+        if (req.body[field] !== undefined)
+          updateFields[field] = req.body[field];
       }
     );
 
-    // Преобразуем ObjectId для групп, если они переданы
     if (req.body.availableForGroups) {
       updateFields.availableForGroups = req.body.availableForGroups.map(String);
     }
 
     updateFields.updatedAt = new Date();
 
-    // Обновляем тест и возвращаем новый объект
     const test = await Test.findByIdAndUpdate(testId, updateFields, {
       new: true,
       runValidators: true,
     });
+    if (!test) return res.status(404).json({ message: "Test not found" });
 
-    if (!test) {
-      return res.status(404).json({ message: "Test not found" });
-    }
-
-    res.status(200).json({
-      message: "Test updated successfully",
-      test: mapTestToDto(test),
-    });
+    res
+      .status(200)
+      .json({ message: "Test updated successfully", test: mapTestToDto(test) });
   } catch (error) {
-    res.status(500).json({
-      message: "Error updating test",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({ message: "Error updating test", error: error.message });
   }
 }
-
 
 // Обновление доступных групп
 async function updateTestGroups(req, res) {
   try {
     const { testId } = req.params;
-    const { groupId, action } = req.body;
+    const { groupIds } = req.body;
 
-    console.log("📡 [Backend] Получен запрос на обновление групп");
-    console.log("➡️ [Backend] testId:", testId);
-    console.log("➡️ [Backend] groupId:", groupId);
-    console.log("➡️ [Backend] action:", action);
-
-    if (!groupId || !["add", "remove"].includes(action)) {
+    if (!Array.isArray(groupIds)) {
       return res.status(400).json({ message: "Invalid request parameters" });
     }
 
-    // Проверяем существование теста
     const test = await Test.findById(testId);
-    if (!test) {
-      return res.status(404).json({ message: "Test not found" });
+    if (!test) return res.status(404).json({ message: "Test not found" });
+
+    const groups = await Group.find({ _id: { $in: groupIds } });
+    if (groups.length !== groupIds.length) {
+      return res
+        .status(400)
+        .json({ message: "One or more groups are invalid" });
     }
 
-    // Проверяем существование группы
-    const group = await Group.findById(groupId);
-    if (!group) {
-      return res.status(404).json({ message: "Group not found" });
-    }
-
-    if (action === "add") {
-      console.log(`📡 [Backend] Добавляем группу ${groupId} к тесту ${testId}`);
-
-      if (!test.availableForGroups.some((id) => id.toString() === groupId)) {
-        test.availableForGroups.push(groupId);
-      }
-    } else if (action === "remove") {
-      console.log(`📡 [Backend] Удаляем группу ${groupId} из теста ${testId}`);
-
-      test.availableForGroups = test.availableForGroups.filter(
-        (id) => id.toString() !== groupId
-      );
-    }
-
+    test.availableForGroups = groupIds;
     await test.save();
-    console.log(
-      "✅ [Backend] Группы успешно обновлены:",
-      test.availableForGroups
-    );
 
     res.status(200).json({
-      message: `Group ${action}ed successfully`,
+      message: "Groups updated successfully",
       availableForGroups: test.availableForGroups.map((g) => g.toString()),
     });
   } catch (error) {
-    console.error("❌ [Backend] Ошибка обновления групп:", error.message);
-    res.status(500).json({
-      message: "Error updating test groups",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({ message: "Error updating test groups", error: error.message });
   }
 }
 
-
-//API для получения доступных групп
+// API для получения доступных групп
 async function getTestAvailableGroups(req, res) {
   try {
     const { testId } = req.params;
@@ -207,9 +167,7 @@ async function getTestAvailableGroups(req, res) {
       "name"
     );
 
-    if (!test) {
-      return res.status(404).json({ message: "Test not found" });
-    }
+    if (!test) return res.status(404).json({ message: "Test not found" });
 
     res.status(200).json({
       availableForGroups: test.availableForGroups.map((group) => ({
@@ -218,7 +176,6 @@ async function getTestAvailableGroups(req, res) {
       })),
     });
   } catch (error) {
-    console.error("❌ [Backend] Ошибка получения доступных групп:", error);
     res
       .status(500)
       .json({
@@ -228,13 +185,10 @@ async function getTestAvailableGroups(req, res) {
   }
 }
 
-
-
 // Удаление теста
 async function deleteTest(req, res) {
   try {
     const { testId } = req.params;
-
     const test = await Test.findById(testId);
     if (!test) return res.status(404).json({ message: "Test not found" });
 
@@ -251,7 +205,6 @@ async function deleteTest(req, res) {
 async function copyTest(req, res) {
   try {
     const { testId } = req.params;
-
     const test = await Test.findById(testId);
     if (!test) return res.status(404).json({ message: "Test not found" });
 
@@ -267,10 +220,12 @@ async function copyTest(req, res) {
     });
 
     await testCopy.save();
-    res.status(201).json({
-      message: "Test copied successfully",
-      test: mapTestToDto(testCopy),
-    });
+    res
+      .status(201)
+      .json({
+        message: "Test copied successfully",
+        test: mapTestToDto(testCopy),
+      });
   } catch (error) {
     res
       .status(500)
