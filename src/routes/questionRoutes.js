@@ -5,7 +5,7 @@ const router = express.Router({ mergeParams: true });
 const {
   createQuestion,
   getQuestions,
-  updateQuestion,
+  updateQuestion, 
   deleteQuestion,
 } = require("../controllers/questionController");
 

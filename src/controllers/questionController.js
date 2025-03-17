@@ -12,7 +12,7 @@ const { uploadImage } = require("../utils/imageService");
 const path = require("path");
 const QUESTION_TYPES = require("../constants/questionTypes");
 
-// Создание нового вопроса
+// **Создание нового вопроса**
 async function createQuestion(req, res, next) {
   try {
     const testId = req.params.testId;
@@ -50,7 +50,6 @@ async function createQuestion(req, res, next) {
     test.questions.push(savedQuestion._id);
     await test.save();
 
-    const { recalculateTotalMaximumMarks } = require("../hooks/answerHooks");
     await recalculateTotalMaximumMarks(test._id);
 
     res.status(201).json({
@@ -62,21 +61,31 @@ async function createQuestion(req, res, next) {
   }
 }
 
-// Получение всех вопросов для теста
+// **Получение всех вопросов для теста**
 async function getQuestions(req, res, next) {
   try {
     const testId = req.params.testId;
     const questions = await Question.find({ testId }).lean();
 
     res.status(200).json({
-      data: questions.map(mapFromDBModel),
+      data: questions.map((question) => ({
+        id: question._id,
+        text: question.questionText,
+        type: question.questionType,
+        image: question.imageUrl || null,
+        answers: question.answers.map((answer) => ({
+          id: answer._id, // ✅ Теперь `answers` содержит `id`
+          text: answer.text,
+          score: answer.score,
+        })),
+      })),
     });
   } catch (error) {
     next(error);
   }
 }
 
-// Обновление вопроса
+// **Обновление вопроса**
 async function updateQuestion(req, res, next) {
   try {
     const { questionId } = req.params;
@@ -90,7 +99,6 @@ async function updateQuestion(req, res, next) {
     const allowedUpdates = ["questionText", "imageUrl", "percentageError"];
 
     const updates = Object.keys(updatedData);
-
     const isValidUpdate = updates.every((update) =>
       allowedUpdates.includes(update)
     );
@@ -130,14 +138,24 @@ async function updateQuestion(req, res, next) {
 
     res.status(200).json({
       message: "Question updated successfully.",
-      data: mapFromDBModel(updatedQuestion),
+      data: {
+        id: updatedQuestion._id,
+        text: updatedQuestion.questionText,
+        type: updatedQuestion.questionType,
+        image: updatedQuestion.imageUrl || null,
+        answers: updatedQuestion.answers.map((answer) => ({
+          id: answer._id, // ✅ Теперь `answers` содержит `id`
+          text: answer.text,
+          score: answer.score,
+        })),
+      },
     });
   } catch (error) {
     next(error);
   }
 }
 
-/// Удаление вопроса
+// **Удаление вопроса**
 async function deleteQuestion(req, res, next) {
   try {
     const { questionId } = req.params;
@@ -151,10 +169,8 @@ async function deleteQuestion(req, res, next) {
 
     const test = await Test.findById(question.testId);
     if (test) {
-      а;
       test.questions.pull(question._id);
       await test.save();
-
       await recalculateTotalMaximumMarks(test._id);
     }
 

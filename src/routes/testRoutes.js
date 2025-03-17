@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   createTest,
   getAllTests,
+  getTestById,
   updateTest,
   deleteTest,
   copyTest,
@@ -22,6 +23,7 @@ router.use(authMiddleware, checkRole([TEST_CREATOR]));
 
 router.post("/", createTest);
 router.get("/", getAllTests);
+router.get("/:testId", getTestById);
 router.put("/:testId", updateTest);
 router.delete("/:testId", deleteTest);
 router.post("/:testId/copy", copyTest);

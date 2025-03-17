@@ -3,6 +3,53 @@ const Group = require("../models/Group");
 const TestResult = require("../models/TestResult");
 const { mapTestToDto } = require("../helpers/testMapper");
 
+// ✅ Получение теста по ID
+async function getTestById(req, res) {
+  try {
+    const { testId } = req.params;
+    const test = await Test.findById(testId)
+      .populate("availableForGroups", "name")
+      .populate("author", "username")
+      .populate({
+        path: "questions",
+        populate: { path: "answers" }, 
+      });
+
+    if (!test) {
+      return res.status(404).json({ message: "Test not found" });
+    }
+
+    const testDto = mapTestToDto(test);
+
+    // ✅ Добавляем автора в DTO вручную
+    testDto.author = {
+      id: test.author._id.toString(),
+      username: test.author.username,
+    };
+
+    // ✅ Добавляем вопросы и ответы
+    testDto.questions = test.questions.map((q) => ({
+      id: q._id.toString(),
+      text: q.text,
+      type: q.type,
+      image: q.image || null, // Может быть null
+      answers: q.answers.map((a) => ({
+        id: a._id.toString(),
+        text: a.text,
+        score: a.score,
+      })),
+    }));
+
+    res.status(200).json(testDto);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error fetching test",
+      error: error.message,
+    });
+  }
+}
+
+
 // Создание нового теста
 async function createTest(req, res) {
   try {
@@ -273,6 +320,7 @@ async function getTestResults(req, res, next) {
 
 module.exports = {
   createTest,
+  getTestById,
   getAllTests,
   getTestGroups,
   updateTest,
