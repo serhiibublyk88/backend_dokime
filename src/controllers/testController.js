@@ -51,7 +51,10 @@ async function getTestById(req, res) {
 
 
 // Создание нового теста
+// Создание нового теста
 async function createTest(req, res) {
+  console.log("req.user:", req.user);
+  console.log("USER ROLE CHECK:", req.user.role);
   try {
     const {
       title,
@@ -60,6 +63,7 @@ async function createTest(req, res) {
       availableForGroups,
       status,
       minimumScores,
+      role,
     } = req.body;
 
     const groups = await Group.find({ _id: { $in: availableForGroups } });
@@ -76,22 +80,32 @@ async function createTest(req, res) {
       availableForGroups: groups.map((g) => g._id),
       status: status || "inactive",
       minimumScores: minimumScores || { 1: 95, 2: 85, 3: 70, 4: 50, 5: 0 },
-      author: req.user._id,
+      author: req.user._id, // ✅ Сохраняем только _id
     });
 
     await newTest.save();
-    res
-      .status(201)
-      .json({
-        message: "Test created successfully",
-        test: mapTestToDto(newTest),
-      });
+
+    // ✅ Теперь загружаем `username` через `populate`
+    await newTest.populate("author", "username");
+
+    console.log("Test after populating author:", newTest);
+
+    res.status(201).json({
+      message: "Test created successfully",
+      test: {
+        ...mapTestToDto(newTest),
+        userId: newTest.author._id.toString(), // ✅ Добавляем `userId` отдельно
+        role: req.user.role,
+      },
+    });
   } catch (error) {
     res
       .status(500)
       .json({ message: "Error creating test", error: error.message });
   }
 }
+
+
 
 // Получение всех тестов
 async function getAllTests(req, res) {

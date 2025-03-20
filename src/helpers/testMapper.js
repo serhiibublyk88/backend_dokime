@@ -1,20 +1,21 @@
 // helpers/testMapper.js
 const mapTestToDto = (test) => ({
-  id: test._id || "",
+  id: test._id.toString() || "",
   title: test.title || "Без названия",
   description: test.description || "",
-  author: test.author
-    ? {
-        id: test.author._id || "unknown",
-        username: test.author.username || "unknown",
-      }
-    : { id: "unknown", username: "unknown" }, 
+  author:
+    test.author && typeof test.author === "object" && test.author._id
+      ? {
+          id: test.author._id.toString(), // ✅ Теперь `id` передаётся всегда
+          username: test.author.username || "unknown",
+        }
+      : { id: "unknown", username: "unknown" },
   timeLimit: test.timeLimit ?? 0,
   status: test.status || "inactive",
   createdAt: test.createdAt || new Date().toISOString(),
   availableForGroups: Array.isArray(test.availableForGroups)
     ? test.availableForGroups.map((group) => ({
-        id: group._id || "unknown",
+        id: group._id.toString() || "unknown",
         name: group.name || "Без названия",
       }))
     : [],
@@ -31,10 +32,10 @@ const mapTestToDto = (test) => ({
       : {},
   questions: Array.isArray(test.questions)
     ? test.questions.map((q) => ({
-        id: q._id || "unknown",
+        id: q._id.toString() || "unknown",
         text: q.text || "Без текста",
       }))
-    : [], // ✅ Добавляем `questions`
+    : [],
 });
 
 module.exports = {
