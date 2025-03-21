@@ -7,12 +7,13 @@ const { mapTestToDto } = require("../helpers/testMapper");
 async function getTestById(req, res) {
   try {
     const { testId } = req.params;
+
     const test = await Test.findById(testId)
       .populate("availableForGroups", "name")
       .populate("author", "username")
       .populate({
         path: "questions",
-        populate: { path: "answers" }, 
+        populate: { path: "answers" },
       });
 
     if (!test) {
@@ -20,25 +21,6 @@ async function getTestById(req, res) {
     }
 
     const testDto = mapTestToDto(test);
-
-    // ✅ Добавляем автора в DTO вручную
-    testDto.author = {
-      id: test.author._id.toString(),
-      username: test.author.username,
-    };
-
-    // ✅ Добавляем вопросы и ответы
-    testDto.questions = test.questions.map((q) => ({
-      id: q._id.toString(),
-      text: q.text,
-      type: q.type,
-      image: q.image || null, // Может быть null
-      answers: q.answers.map((a) => ({
-        id: a._id.toString(),
-        text: a.text,
-        score: a.score,
-      })),
-    }));
 
     res.status(200).json(testDto);
   } catch (error) {
@@ -49,21 +31,17 @@ async function getTestById(req, res) {
   }
 }
 
-
-// Создание нового теста
 // Создание нового теста
 async function createTest(req, res) {
-  console.log("req.user:", req.user);
-  console.log("USER ROLE CHECK:", req.user.role);
   try {
     const {
       title,
       description,
       timeLimit,
       availableForGroups,
+      questions,
       status,
       minimumScores,
-      role,
     } = req.body;
 
     const groups = await Group.find({ _id: { $in: availableForGroups } });
@@ -73,39 +51,52 @@ async function createTest(req, res) {
         .json({ message: "One or more groups are invalid" });
     }
 
+    let questionIds = [];
+    if (Array.isArray(questions)) {
+      questionIds = questions
+        .map((q) =>
+          typeof q === "string"
+            ? mongoose.Types.ObjectId.isValid(q)
+              ? new mongoose.Types.ObjectId(q)
+              : null
+            : q?.id && mongoose.Types.ObjectId.isValid(q.id)
+            ? new mongoose.Types.ObjectId(q.id)
+            : null
+        )
+        .filter(Boolean);
+    }
+
     const newTest = new Test({
       title,
       description,
       timeLimit,
       availableForGroups: groups.map((g) => g._id),
+      questions: questionIds,
       status: status || "inactive",
       minimumScores: minimumScores || { 1: 95, 2: 85, 3: 70, 4: 50, 5: 0 },
-      author: req.user._id, // ✅ Сохраняем только _id
+      author: req.user._id,
     });
 
     await newTest.save();
 
-    // ✅ Теперь загружаем `username` через `populate`
     await newTest.populate("author", "username");
-
-    console.log("Test after populating author:", newTest);
+    await newTest.populate("questions");
 
     res.status(201).json({
       message: "Test created successfully",
       test: {
         ...mapTestToDto(newTest),
-        userId: newTest.author._id.toString(), // ✅ Добавляем `userId` отдельно
+        userId: newTest.author._id.toString(),
         role: req.user.role,
       },
     });
   } catch (error) {
+    console.error("Ошибка при создании теста:", error);
     res
       .status(500)
       .json({ message: "Error creating test", error: error.message });
   }
 }
-
-
 
 // Получение всех тестов
 async function getAllTests(req, res) {
@@ -151,39 +142,78 @@ async function getTestGroups(req, res) {
 }
 
 // Обновление теста
-async function updateTest(req, res) {
+const updateTest = async (req, res) => {
   try {
     const { testId } = req.params;
-    const updateFields = {};
+    const updates = { ...req.body };
 
-    ["title", "description", "timeLimit", "status", "minimumScores"].forEach(
-      (field) => {
-        if (req.body[field] !== undefined)
-          updateFields[field] = req.body[field];
-      }
-    );
-
-    if (req.body.availableForGroups) {
-      updateFields.availableForGroups = req.body.availableForGroups.map(String);
+    const existingTest = await Test.findById(testId);
+    if (!existingTest) {
+      return res.status(404).json({ error: "Тест не найден" });
     }
 
-    updateFields.updatedAt = new Date();
+    if (Array.isArray(updates.questions)) {
+      updates.questions = updates.questions
+        .map((q) =>
+          mongoose.Types.ObjectId.isValid(q.id || q)
+            ? new mongoose.Types.ObjectId(q.id || q)
+            : null
+        )
+        .filter(Boolean);
+    } else {
+      delete updates.questions;
+    }
 
-    const test = await Test.findByIdAndUpdate(testId, updateFields, {
-      new: true,
-      runValidators: true,
-    });
-    if (!test) return res.status(404).json({ message: "Test not found" });
+    if (Array.isArray(updates.availableForGroups)) {
+      updates.availableForGroups = updates.availableForGroups
+        .map((g) =>
+          mongoose.Types.ObjectId.isValid(g.id || g)
+            ? new mongoose.Types.ObjectId(g.id || g)
+            : null
+        )
+        .filter(Boolean);
+    } else {
+      delete updates.availableForGroups;
+    }
 
-    res
-      .status(200)
-      .json({ message: "Test updated successfully", test: mapTestToDto(test) });
+    if (
+      updates.author &&
+      typeof updates.author === "object" &&
+      updates.author.id
+    ) {
+      updates.author = new mongoose.Types.ObjectId(updates.author.id);
+    } else if (typeof updates.author === "string") {
+      updates.author = new mongoose.Types.ObjectId(updates.author);
+    } else {
+      delete updates.author;
+    }
+
+    const updatedTest = await Test.findByIdAndUpdate(
+      testId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    )
+      .populate("availableForGroups", "name")
+      .populate("author", "username")
+      .populate({
+        path: "questions",
+        populate: { path: "answers" },
+      });
+
+    if (!updatedTest) {
+      return res.status(404).json({ error: "Не удалось обновить тест" });
+    }
+
+    const testDto = mapTestToDto(updatedTest);
+    testDto.userId = updatedTest.author._id.toString();
+    testDto.role = req.user.role;
+
+    res.status(200).json(testDto);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating test", error: error.message });
+    console.error("Ошибка при обновлении теста:", error);
+    res.status(500).json({ error: "Ошибка сервера при обновлении теста" });
   }
-}
+};
 
 // Обновление доступных групп
 async function updateTestGroups(req, res) {
@@ -237,12 +267,10 @@ async function getTestAvailableGroups(req, res) {
       })),
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        message: "Error fetching available groups",
-        error: error.message,
-      });
+    res.status(500).json({
+      message: "Error fetching available groups",
+      error: error.message,
+    });
   }
 }
 
@@ -281,12 +309,10 @@ async function copyTest(req, res) {
     });
 
     await testCopy.save();
-    res
-      .status(201)
-      .json({
-        message: "Test copied successfully",
-        test: mapTestToDto(testCopy),
-      });
+    res.status(201).json({
+      message: "Test copied successfully",
+      test: mapTestToDto(testCopy),
+    });
   } catch (error) {
     res
       .status(500)

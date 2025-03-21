@@ -6,7 +6,7 @@ const mapTestToDto = (test) => ({
   author:
     test.author && typeof test.author === "object" && test.author._id
       ? {
-          id: test.author._id.toString(), // ✅ Теперь `id` передаётся всегда
+          id: test.author._id.toString(),
           username: test.author.username || "unknown",
         }
       : { id: "unknown", username: "unknown" },
@@ -29,15 +29,24 @@ const mapTestToDto = (test) => ({
           },
           {}
         )
-      : {},
+      : test.minimumScores || {},
   questions: Array.isArray(test.questions)
     ? test.questions.map((q) => ({
         id: q._id.toString() || "unknown",
-        text: q.text || "Без текста",
+        text: q.questionText || "Без текста", 
+        type: q.questionType || "single", 
+        image: q.imageUrl || null, 
+        percentageError: q.percentageError ?? undefined,
+        answers: Array.isArray(q.answers)
+          ? q.answers.map((a) => ({
+              id: a._id.toString() || "unknown",
+              text: a.text || "Без ответа",
+              score: a.score ?? 0,
+              isCorrect: a.isCorrect ?? false, //  можно скрыть
+            }))
+          : [],
       }))
     : [],
 });
 
-module.exports = {
-  mapTestToDto,
-};
+module.exports ={ mapTestToDto};
