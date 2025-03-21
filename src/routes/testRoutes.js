@@ -12,6 +12,7 @@ const {
   updateTestGroups,
   getTestGroups,
   getTestAvailableGroups,
+  updateTestStatus,
 } = require("../controllers/testController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -30,8 +31,8 @@ router.post("/:testId/copy", copyTest);
 router.get("/:testId/results", getTestResults);
 router.patch("/:testId/available-groups",updateTestGroups);
 router.get("/:testId/available-groups", getTestAvailableGroups);
-
 router.get("/:testId/groups", getTestGroups);
+router.patch("/:testId/status", updateTestStatus);
 
 
 const questionRoutes = require("./questionRoutes");

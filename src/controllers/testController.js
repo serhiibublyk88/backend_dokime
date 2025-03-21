@@ -358,6 +358,43 @@ async function getTestResults(req, res, next) {
   }
 }
 
+//  Обновление статуса теста (active / inactive)
+const updateTestStatus = async (req, res) => {
+  try {
+    const { testId } = req.params;
+    const { status } = req.body;
+
+    // ✅ Проверка ID и значения
+    if (!mongoose.Types.ObjectId.isValid(testId)) {
+      return res.status(400).json({ message: "Invalid test ID" });
+    }
+
+    if (!["active", "inactive"].includes(status)) {
+      return res
+        .status(400)
+        .json({ message: "Status must be 'active' or 'inactive'" });
+    }
+
+    const test = await Test.findById(testId);
+    if (!test) {
+      return res.status(404).json({ message: "Test not found" });
+    }
+
+    test.status = status;
+    await test.save();
+
+    return res.status(200).json({
+      message: "Status updated successfully",
+      test: mapTestToDto(test),
+    });
+  } catch (error) {
+    console.error("Ошибка при обновлении статуса теста:", error);
+    return res
+      .status(500)
+      .json({ message: "Error updating test status", error: error.message });
+  }
+};
+
 module.exports = {
   createTest,
   getTestById,
@@ -369,4 +406,5 @@ module.exports = {
   getTestResults,
   updateTestGroups,
   getTestAvailableGroups,
+  updateTestStatus,
 };
