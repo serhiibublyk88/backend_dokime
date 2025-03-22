@@ -321,9 +321,12 @@ async function copyTest(req, res) {
 }
 
 // Получение результатов теста
+// controllers/testController.js
+
 async function getTestResults(req, res, next) {
   try {
     const { testId } = req.params;
+
     const test = await Test.findById(testId).populate("author", "name").lean();
     if (!test) return res.status(404).json({ error: "Test not found" });
 
@@ -333,30 +336,57 @@ async function getTestResults(req, res, next) {
 
     const testResults = await TestResult.find({ testId })
       .populate("userId", "name")
-      .populate("author", "name")
       .lean();
 
     const resultsWithDetails = groups.map((group) => ({
+      groupId: group._id,
       groupName: group.name,
       participants: group.members.map((user) => {
         const result = testResults.find(
           (r) => r.userId._id.toString() === user._id.toString()
         );
-        return result
-          ? {
-              userId: result.userId._id,
-              userName: result.userId.name,
-              percentageScore: result.percentageScore,
-            }
-          : { userId: user._id, userName: user.name, percentageScore: 0 };
+
+        if (result) {
+          return {
+            userId: user._id,
+            userName: user.name,
+            hasPassed: true,
+            startTime: new Date(result.startTime)
+              .toISOString()
+              .split(".")[0]
+              .replace("T", " "),
+            timeTaken: result.timeTaken,
+            maximumMarks: result.maximumMarks,
+            obtainedMarks: result.totalScore,
+            percentageScore: result.percentageScore,
+            grade: result.grade,
+          };
+        }
+
+        return {
+          userId: user._id,
+          userName: user.name,
+          hasPassed: false,
+          startTime: null,
+          timeTaken: null,
+          maximumMarks: test.maximumMarks,
+          obtainedMarks: 0,
+          percentageScore: 0,
+          grade: null,
+        };
       }),
     }));
 
-    res.status(200).json({ testName: test.title, groups: resultsWithDetails });
+    res.status(200).json({
+      testId: test._id,
+      testName: test.title,
+      groups: resultsWithDetails,
+    });
   } catch (error) {
     next(error);
   }
 }
+
 
 //  Обновление статуса теста (active / inactive)
 const updateTestStatus = async (req, res) => {

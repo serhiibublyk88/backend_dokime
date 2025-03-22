@@ -234,17 +234,86 @@ const submitTestAttempt = async (req, res, next) => {
   }
 };
 
-// Получить данные о попытке теста
+// Получить данные о попытке теста для юзера
 const getTestAttempt = async (req, res, next) => {
   try {
     const { attemptId } = req.params;
+    const userId = req.user?.id;
 
-    const attempt = await TestAttempt.findById(attemptId);
+    const attempt = await TestAttempt.findById(attemptId)
+      .populate("testId")
+      .lean();
+
     if (!attempt) {
       return res.status(404).json({ error: "Test attempt not found" });
     }
 
-    res.status(200).json({ data: attempt });
+    // Защита: доступ только к своей попытке
+    if (String(attempt.userId) !== String(userId)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const test = attempt.testId;
+    const questions = await Question.find({ testId: test._id }).lean();
+
+    // Словарь вопросов по ID
+    const questionMap = {};
+    questions.forEach((q) => {
+      questionMap[q._id.toString()] = q;
+    });
+
+    const formattedQuestions = attempt.answers
+      .map((answerObj) => {
+        const question = questionMap[answerObj.questionId.toString()];
+        if (!question) return null;
+
+        let correctAnswer = null;
+        if (
+          question.questionType === "single-choice" ||
+          question.questionType === "multiple-choice"
+        ) {
+          correctAnswer = question.answers
+            .filter((a) => a.isCorrect)
+            .map((a) => a.text);
+        } else if (
+          question.questionType === "number-input" ||
+          question.questionType === "text-input"
+        ) {
+          correctAnswer = question.answers[0]?.text || null;
+        }
+
+        return {
+          questionText: question.questionText,
+          imageUrl: question.imageUrl,
+          type: question.questionType,
+          userAnswer: answerObj.answer,
+          correctAnswer,
+          isCorrect: answerObj.isCorrect,
+          score: answerObj.score,
+        };
+      })
+      .filter(Boolean);
+
+    const result = {
+      testTitle: test.title,
+      startTime: new Date(attempt.startedAt)
+        .toISOString()
+        .split(".")[0]
+        .replace("T", " "),
+      finishTime: new Date(attempt.finishedAt)
+        .toISOString()
+        .split(".")[0]
+        .replace("T", " "),
+      timeLimit: attempt.timeLimit,
+      timeTaken: attempt.timeTaken,
+      totalScore: attempt.totalScore,
+      maximumMarks: attempt.maximumMarks,
+      percentageScore: attempt.percentageScore,
+      grade: attempt.grade,
+      questions: formattedQuestions,
+    };
+
+    res.status(200).json({ data: result });
   } catch (error) {
     next(error);
   }
