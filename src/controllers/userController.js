@@ -23,9 +23,8 @@ const getAvailableTests = async (req, res, next) => {
 
     const availableTests = await Test.find({
       availableForGroups: user.group._id,
-      status: "active",
       _id: { $nin: completedTestIds },
-    }).select("name");
+    }).select("_id title status");
 
     res.status(200).json({ data: availableTests });
   } catch (error) {
