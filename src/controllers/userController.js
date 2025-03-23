@@ -130,6 +130,7 @@ const createTestAttemptAndGetQuestions = async (req, res, next) => {
       data: {
         attemptId: attempt._id,
         questions: filteredQuestions,
+        timeLimit: attempt.timeLimit,
       },
     });
   } catch (error) {
