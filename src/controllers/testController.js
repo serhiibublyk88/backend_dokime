@@ -1,7 +1,9 @@
 const Test = require("../models/Test");
 const Group = require("../models/Group");
+const Question = require("../models/Question");
 const TestResult = require("../models/TestResult");
 const { mapTestToDto } = require("../helpers/testMapper");
+const { convertFrontendTypeToBackend } = require("../utils/questionUtils");
 
 // ✅ Получение теста по ID
 async function getTestById(req, res) {
@@ -28,73 +30,6 @@ async function getTestById(req, res) {
       message: "Error fetching test",
       error: error.message,
     });
-  }
-}
-
-// Создание нового теста
-async function createTest(req, res) {
-  try {
-    const {
-      title,
-      description,
-      timeLimit,
-      availableForGroups,
-      questions,
-      status,
-      minimumScores,
-    } = req.body;
-
-    const groups = await Group.find({ _id: { $in: availableForGroups } });
-    if (groups.length !== availableForGroups.length) {
-      return res
-        .status(400)
-        .json({ message: "One or more groups are invalid" });
-    }
-
-    let questionIds = [];
-    if (Array.isArray(questions)) {
-      questionIds = questions
-        .map((q) =>
-          typeof q === "string"
-            ? mongoose.Types.ObjectId.isValid(q)
-              ? new mongoose.Types.ObjectId(q)
-              : null
-            : q?.id && mongoose.Types.ObjectId.isValid(q.id)
-            ? new mongoose.Types.ObjectId(q.id)
-            : null
-        )
-        .filter(Boolean);
-    }
-
-    const newTest = new Test({
-      title,
-      description,
-      timeLimit,
-      availableForGroups: groups.map((g) => g._id),
-      questions: questionIds,
-      status: status || "inactive",
-      minimumScores: minimumScores || { 1: 95, 2: 85, 3: 70, 4: 50, 5: 0 },
-      author: req.user._id,
-    });
-
-    await newTest.save();
-
-    await newTest.populate("author", "username");
-    await newTest.populate("questions");
-
-    res.status(201).json({
-      message: "Test created successfully",
-      test: {
-        ...mapTestToDto(newTest),
-        userId: newTest.author._id.toString(),
-        role: req.user.role,
-      },
-    });
-  } catch (error) {
-    console.error("Ошибка при создании теста:", error);
-    res
-      .status(500)
-      .json({ message: "Error creating test", error: error.message });
   }
 }
 
@@ -140,72 +75,184 @@ async function getTestGroups(req, res) {
       .json({ message: "Error fetching test groups", error: error.message });
   }
 }
+// Создание нового теста
 
-// Обновление теста
-const updateTest = async (req, res) => {
+async function createTest(req, res) {
+  try {
+    const {
+      title,
+      description,
+      timeLimit,
+      availableForGroups,
+      questions,
+      status,
+      minimumScores,
+    } = req.body;
+
+    const groups = await Group.find({ _id: { $in: availableForGroups } });
+    if (groups.length !== availableForGroups.length) {
+      return res
+        .status(400)
+        .json({ message: "One or more groups are invalid" });
+    }
+
+    const newTest = new Test({
+      title,
+      description,
+      timeLimit,
+      availableForGroups: groups.map((g) => g._id),
+      questions: [],
+      status: status || "inactive",
+      minimumScores: minimumScores || { 1: 95, 2: 80, 3: 70, 4: 50, 5: 0 },
+      author: req.user._id,
+    });
+
+    await newTest.save();
+
+    const createdQuestions = await Promise.all(
+      questions.map((q) => {
+        const convertedType = convertFrontendTypeToBackend(q.questionType);
+        const questionData = {
+          questionText: q.questionText,
+          questionType: convertedType,
+          imageUrl: q.imageUrl || null,
+          answers: q.answers || [],
+          testId: newTest._id,
+        };
+        // только для text-input
+        if (
+          convertedType === "text-input" &&
+          typeof q.percentageError === "number"
+        ) {
+          questionData.percentageError = q.percentageError;
+        }
+
+        return Question.create(questionData);
+      })
+    );
+
+    const maximumMarks = createdQuestions.reduce(
+      (total, q) =>
+        total +
+        q.answers.reduce((sum, a) => sum + (a.score > 0 ? a.score : 0), 0),
+      0
+    );
+
+    newTest.questions = createdQuestions.map((q) => q._id);
+    newTest.maximumMarks = maximumMarks;
+    await newTest.save();
+
+    await newTest.populate("availableForGroups", "name");
+    await newTest.populate("author", "username");
+    await newTest.populate({
+      path: "questions",
+      populate: { path: "answers" },
+    });
+
+    res.status(201).json({
+      message: "Test created successfully",
+      test: {
+        ...mapTestToDto(newTest),
+        userId: req.user._id.toString(),
+        role: req.user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Ошибка при создании теста:", error);
+    res.status(500).json({
+      message: "Error creating test",
+      error: error.message,
+    });
+  }
+}
+
+//////////////////////////////////////////////////
+async function updateTest(req, res) {
   try {
     const { testId } = req.params;
-    const updates = { ...req.body };
+    const {
+      title,
+      description,
+      timeLimit,
+      availableForGroups,
+      questions,
+      status,
+      minimumScores,
+    } = req.body;
 
     const existingTest = await Test.findById(testId);
     if (!existingTest) {
       return res.status(404).json({ error: "Тест не найден" });
     }
 
-    if (Array.isArray(updates.questions)) {
-      updates.questions = updates.questions
-        .map((q) =>
-          mongoose.Types.ObjectId.isValid(q.id || q)
-            ? new mongoose.Types.ObjectId(q.id || q)
-            : null
-        )
-        .filter(Boolean);
-    } else {
-      delete updates.questions;
-    }
-
-    if (Array.isArray(updates.availableForGroups)) {
-      updates.availableForGroups = updates.availableForGroups
-        .map((g) =>
-          mongoose.Types.ObjectId.isValid(g.id || g)
-            ? new mongoose.Types.ObjectId(g.id || g)
-            : null
-        )
-        .filter(Boolean);
-    } else {
-      delete updates.availableForGroups;
-    }
-
     if (
-      updates.author &&
-      typeof updates.author === "object" &&
-      updates.author.id
+      Array.isArray(existingTest.questions) &&
+      existingTest.questions.length > 0
     ) {
-      updates.author = new mongoose.Types.ObjectId(updates.author.id);
-    } else if (typeof updates.author === "string") {
-      updates.author = new mongoose.Types.ObjectId(updates.author);
-    } else {
-      delete updates.author;
+      await Question.deleteMany({ _id: { $in: existingTest.questions } });
     }
 
-    const updatedTest = await Test.findByIdAndUpdate(
-      testId,
-      { $set: updates },
-      { new: true, runValidators: true }
-    )
-      .populate("availableForGroups", "name")
-      .populate("author", "username")
-      .populate({
-        path: "questions",
-        populate: { path: "answers" },
-      });
+    const createdQuestions = await Promise.all(
+      questions.map((q) => {
+        const convertedType = convertFrontendTypeToBackend(q.questionType);
+        const questionData = {
+          questionText: q.questionText,
+          questionType: convertedType,
+          imageUrl: q.imageUrl || null,
+          answers: q.answers || [],
+          testId: testId,
+        };
+        if (
+          convertedType === "text-input" &&
+          typeof q.percentageError === "number"
+        ) {
+          questionData.percentageError = q.percentageError;
+        }
+        return Question.create(questionData);
+      })
+    );
 
-    if (!updatedTest) {
-      return res.status(404).json({ error: "Не удалось обновить тест" });
+    const questionIds = createdQuestions.map((q) => q._id);
+    const maximumMarks = createdQuestions.reduce(
+      (total, q) =>
+        total +
+        q.answers.reduce((sum, a) => sum + (a.score > 0 ? a.score : 0), 0),
+      0
+    );
+
+    const groups = await Group.find({ _id: { $in: availableForGroups } });
+    if (groups.length !== availableForGroups.length) {
+      return res
+        .status(400)
+        .json({ message: "One or more groups are invalid" });
     }
 
-    const testDto = mapTestToDto(updatedTest);
-    testDto.userId = updatedTest.author._id.toString();
+    existingTest.title = title;
+    existingTest.description = description;
+    existingTest.timeLimit = timeLimit;
+    existingTest.status = status || "inactive";
+    existingTest.minimumScores = minimumScores || {
+      1: 95,
+      2: 80,
+      3: 70,
+      4: 50,
+      5: 0,
+    };
+    existingTest.availableForGroups = groups.map((g) => g._id);
+    existingTest.questions = questionIds;
+    existingTest.maximumMarks = maximumMarks;
+
+    await existingTest.save();
+
+    await existingTest.populate("availableForGroups", "name");
+    await existingTest.populate("author", "username");
+    await existingTest.populate({
+      path: "questions",
+      populate: { path: "answers" },
+    });
+
+    const testDto = mapTestToDto(existingTest);
+    testDto.userId = existingTest.author._id.toString();
     testDto.role = req.user.role;
 
     res.status(200).json(testDto);
@@ -213,7 +260,114 @@ const updateTest = async (req, res) => {
     console.error("Ошибка при обновлении теста:", error);
     res.status(500).json({ error: "Ошибка сервера при обновлении теста" });
   }
-};
+}
+
+////////////////////////////////////////////////////
+async function deleteTest(req, res) {
+  try {
+    const { testId } = req.params;
+    const test = await Test.findById(testId);
+    if (!test) return res.status(404).json({ message: "Test not found" });
+
+    // Удаляем связанные вопросы
+    if (Array.isArray(test.questions) && test.questions.length > 0) {
+      await Question.deleteMany({ _id: { $in: test.questions } });
+    }
+
+    await test.deleteOne();
+    res.status(200).json({ message: "Test deleted successfully" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error deleting test", error: error.message });
+  }
+}
+
+/////////////////////////////////////////////////////
+async function copyTest(req, res) {
+  try {
+    const { testId } = req.params;
+
+    const originalTest = await Test.findById(testId)
+      .populate("questions")
+      .populate("availableForGroups", "name")
+      .populate("author", "username");
+
+    if (!originalTest) {
+      return res.status(404).json({ message: "Test not found" });
+    }
+
+    // Создаём копию теста (без вопросов)
+    const testCopy = new Test({
+      title: `${originalTest.title}_copy`,
+      description: originalTest.description,
+      timeLimit: originalTest.timeLimit,
+      availableForGroups: originalTest.availableForGroups.map((g) => g._id),
+      status: "inactive",
+      minimumScores: originalTest.minimumScores,
+      author: req.user._id,
+      questions: [],
+    });
+
+    await testCopy.save();
+
+    // Копируем вопросы, включая testId и корректный тип
+    const copiedQuestions = await Promise.all(
+      originalTest.questions.map((q) => {
+        const convertedType = convertFrontendTypeToBackend(q.questionType);
+
+        const questionData = {
+          questionText: q.questionText,
+          questionType: convertedType,
+          imageUrl: q.imageUrl || null,
+          answers: q.answers || [],
+          testId: testCopy._id,
+        };
+
+        if (
+          convertedType === "text-input" &&
+          typeof q.percentageError === "number"
+        ) {
+          questionData.percentageError = q.percentageError;
+        }
+
+        return Question.create(questionData);
+      })
+    );
+
+    const maximumMarks = copiedQuestions.reduce(
+      (total, q) =>
+        total +
+        q.answers.reduce((sum, a) => sum + (a.score > 0 ? a.score : 0), 0),
+      0
+    );
+
+    testCopy.questions = copiedQuestions.map((q) => q._id);
+    testCopy.maximumMarks = maximumMarks;
+    await testCopy.save();
+
+    await testCopy.populate("author", "username");
+    await testCopy.populate("availableForGroups", "name");
+    await testCopy.populate({
+      path: "questions",
+      populate: { path: "answers" },
+    });
+
+    res.status(201).json({
+      message: "Test copied successfully",
+      test: {
+        ...mapTestToDto(testCopy),
+        userId: req.user._id.toString(),
+        role: req.user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Ошибка при копировании теста:", error);
+    res
+      .status(500)
+      .json({ message: "Error copying test", error: error.message });
+  }
+}
 
 // Обновление доступных групп
 async function updateTestGroups(req, res) {
@@ -271,52 +425,6 @@ async function getTestAvailableGroups(req, res) {
       message: "Error fetching available groups",
       error: error.message,
     });
-  }
-}
-
-// Удаление теста
-async function deleteTest(req, res) {
-  try {
-    const { testId } = req.params;
-    const test = await Test.findById(testId);
-    if (!test) return res.status(404).json({ message: "Test not found" });
-
-    await test.deleteOne();
-    res.status(200).json({ message: "Test deleted successfully" });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error deleting test", error: error.message });
-  }
-}
-
-// Копирование теста
-async function copyTest(req, res) {
-  try {
-    const { testId } = req.params;
-    const test = await Test.findById(testId);
-    if (!test) return res.status(404).json({ message: "Test not found" });
-
-    const testCopy = new Test({
-      ...test.toObject(),
-      title: test.title + "_copy",
-      status: "inactive",
-      _id: undefined,
-      createdAt: undefined,
-      updatedAt: undefined,
-      availableForGroups: test.availableForGroups.map((group) => group._id),
-      questions: test.questions.map((question) => question._id),
-    });
-
-    await testCopy.save();
-    res.status(201).json({
-      message: "Test copied successfully",
-      test: mapTestToDto(testCopy),
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error copying test", error: error.message });
   }
 }
 
@@ -386,7 +494,6 @@ async function getTestResults(req, res, next) {
     next(error);
   }
 }
-
 
 //  Обновление статуса теста (active / inactive)
 const updateTestStatus = async (req, res) => {

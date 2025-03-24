@@ -62,17 +62,19 @@ const questionSchema = new mongoose.Schema(
     },
     percentageError: {
       type: Number,
-      default: undefined,
       validate: {
         validator: function (value) {
-          return this.questionType === QUESTION_TYPES.TEXT_INPUT
-            ? value >= 0 && value <= 100
-            : value === undefined;
+          if (this.questionType === QUESTION_TYPES.TEXT_INPUT) {
+            return typeof value === "number" && value >= 0 && value <= 100;
+          }
+          // для всех остальных типов поле не должно присутствовать
+          return value === undefined;
         },
         message:
           "Percentage error must be between 0 and 100, only for TEXT_INPUT type.",
       },
     },
+
     testId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Test",
