@@ -70,6 +70,7 @@ async function getUserResults(req, res, next) {
 }
 
 // Создание новой попытки теста и получение вопросов
+// Создание новой попытки теста и получение вопросов
 const createTestAttemptAndGetQuestions = async (req, res, next) => {
   try {
     const { testId } = req.params;
@@ -85,7 +86,11 @@ const createTestAttemptAndGetQuestions = async (req, res, next) => {
       return res.status(404).json({ error: "User or group not found" });
     }
 
-    if (!test.availableForGroups.includes(user.group._id)) {
+    if (
+      !test.availableForGroups.some(
+        (groupId) => groupId.toString() === user.group._id.toString()
+      )
+    ) {
       return res
         .status(403)
         .json({ error: "Test is not available for your group" });
@@ -96,8 +101,11 @@ const createTestAttemptAndGetQuestions = async (req, res, next) => {
       testId,
       isCompleted: true,
     });
+
     if (existingTestResult) {
-      return res.status(400).json({ error: "Test has already been completed" });
+      return res
+        .status(400)
+        .json({ error: "Test has already been completed" });
     }
 
     const attempt = new TestAttempt({
@@ -134,9 +142,13 @@ const createTestAttemptAndGetQuestions = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("Error in createTestAttemptAndGetQuestions:", error);
     next(error);
   }
 };
+
+
+
 
 const submitTestAttempt = async (req, res, next) => {
   try {

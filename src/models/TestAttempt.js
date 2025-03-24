@@ -12,6 +12,14 @@ const TestAttemptSchema = new mongoose.Schema({
     ref: "Test",
     required: true,
   },
+  maximumMarks: {
+    type: Number,
+    default: 0,
+  },
+  timeLimit: {
+    type: Number,
+    required: true,
+  },
   startedAt: {
     type: Date,
     required: true,
@@ -21,6 +29,14 @@ const TestAttemptSchema = new mongoose.Schema({
   },
   timeTaken: {
     type: Number,
+  },
+  percentageScore: {
+    type: Number,
+    default: 0,
+  },
+  isCompleted: {
+    type: Boolean,
+    default: false,
   },
   answers: [
     {
@@ -45,7 +61,7 @@ const TestAttemptSchema = new mongoose.Schema({
   ],
   totalScore: {
     type: Number,
-    default: 0, 
+    default: 0,
   },
 });
 

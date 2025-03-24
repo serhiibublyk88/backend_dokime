@@ -3,7 +3,7 @@ const Group = require("../models/Group");
 const Question = require("../models/Question");
 const TestResult = require("../models/TestResult");
 const { mapTestToDto } = require("../helpers/testMapper");
-const { convertFrontendTypeToBackend } = require("../utils/questionUtils");
+
 
 // ✅ Получение теста по ID
 async function getTestById(req, res) {
@@ -77,6 +77,7 @@ async function getTestGroups(req, res) {
 }
 // Создание нового теста
 
+// Создание нового теста
 async function createTest(req, res) {
   try {
     const {
@@ -91,9 +92,7 @@ async function createTest(req, res) {
 
     const groups = await Group.find({ _id: { $in: availableForGroups } });
     if (groups.length !== availableForGroups.length) {
-      return res
-        .status(400)
-        .json({ message: "One or more groups are invalid" });
+      return res.status(400).json({ message: "One or more groups are invalid" });
     }
 
     const newTest = new Test({
@@ -111,17 +110,17 @@ async function createTest(req, res) {
 
     const createdQuestions = await Promise.all(
       questions.map((q) => {
-        const convertedType = convertFrontendTypeToBackend(q.questionType);
         const questionData = {
           questionText: q.questionText,
-          questionType: convertedType,
+          questionType: q.questionType, // Используем напрямую без маппера
           imageUrl: q.imageUrl || null,
           answers: q.answers || [],
           testId: newTest._id,
         };
-        // только для text-input
+
+        // Только для text-input
         if (
-          convertedType === "text-input" &&
+          q.questionType === "text-input" &&
           typeof q.percentageError === "number"
         ) {
           questionData.percentageError = q.percentageError;

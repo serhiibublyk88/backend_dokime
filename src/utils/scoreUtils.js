@@ -1,16 +1,19 @@
-// utils/scoreUtils
+// utils/scoreUtils.js
+
 const QUESTION_TYPES = require("../constants/questionTypes");
 const stringSimilarity = require("string-similarity");
 
+// Сравнение строк с учетом регистра, пробелов и допуска ошибок
 const calculateTextSimilarity = (input, correct) =>
   stringSimilarity.compareTwoStrings(
     input.trim().toLowerCase(),
     correct.trim().toLowerCase()
   );
 
+// Основная функция подсчета баллов за вопрос
 const calculateTotalScore = (question, userAnswer) => {
-  let isCorrect = false,
-    score = 0;
+  let isCorrect = false;
+  let score = 0;
 
   const correctAnswers = question.answers
     .filter((ans) => ans.isCorrect)
@@ -22,51 +25,59 @@ const calculateTotalScore = (question, userAnswer) => {
 
   switch (question.questionType) {
     case QUESTION_TYPES.SINGLE_CHOICE: {
-      const selectedAnswer = userAnswers[0];
-      if (selectedAnswer && correctAnswers.includes(selectedAnswer)) {
-        const correctAnswer = question.answers.find(
-          (ans) => ans._id.toString() === selectedAnswer
+      const selected = Array.isArray(userAnswer) ? userAnswer[0] : userAnswer;
+      if (selected && correctAnswers.includes(selected)) {
+        const correct = question.answers.find(
+          (ans) => ans._id.toString() === selected
         );
-        score = correctAnswer?.score || 0;
+        score = correct?.score || 0;
         isCorrect = true;
       }
       break;
     }
+
     case QUESTION_TYPES.MULTIPLE_CHOICE: {
-      score = userAnswers.reduce(
-        (total, id) =>
-          correctAnswers.includes(id)
-            ? total +
-              (question.answers.find((ans) => ans._id.toString() === id)
-                ?.score || 0)
-            : total,
-        0
-      );
-      isCorrect = userAnswers.every((id) => correctAnswers.includes(id));
+      const uniqueUserAnswers = [...new Set(userAnswers)];
+      const isAllCorrect =
+        uniqueUserAnswers.every((id) => correctAnswers.includes(id)) &&
+        correctAnswers.length === uniqueUserAnswers.length;
+
+      score = uniqueUserAnswers.reduce((total, id) => {
+        const ans = question.answers.find(
+          (a) => a._id.toString() === id && a.isCorrect
+        );
+        return total + (ans?.score || 0);
+      }, 0);
+
+      isCorrect = isAllCorrect;
       break;
     }
+
     case QUESTION_TYPES.NUMBER_INPUT: {
-      if (typeof userAnswer === "number") {
-        const correctAnswer = question.answers.find((ans) => ans.isCorrect);
-        if (Number(correctAnswer?.text) === userAnswer) {
-          isCorrect = true;
-          score = correctAnswer?.score || 0;
-        }
+      const input = parseFloat(userAnswer);
+      const correct = question.answers.find((ans) => ans.isCorrect);
+      const correctValue = parseFloat(correct?.text);
+      if (!isNaN(input) && !isNaN(correctValue) && input === correctValue) {
+        isCorrect = true;
+        score = correct?.score || 0;
       }
       break;
     }
+
     case QUESTION_TYPES.TEXT_INPUT: {
       if (typeof userAnswer === "string") {
-        const correctAnswer = question.answers.find((ans) => ans.isCorrect);
+        const correct = question.answers.find((ans) => ans.isCorrect);
         const similarity = calculateTextSimilarity(
           userAnswer,
-          correctAnswer?.text || ""
+          correct?.text || ""
         );
-        isCorrect = similarity >= 1 - (question.percentageError || 0) / 100;
-        score = isCorrect ? correctAnswer?.score || 0 : 0;
+        const allowedError = question.percentageError || 0;
+        isCorrect = similarity >= 1 - allowedError / 100;
+        score = isCorrect ? correct?.score || 0 : 0;
       }
       break;
     }
+
     default:
       break;
   }
@@ -74,6 +85,7 @@ const calculateTotalScore = (question, userAnswer) => {
   return { isCorrect, score };
 };
 
+// Подсчет итоговой оценки по проценту прохождения
 const calculateGrade = (correctAnswers, totalQuestions, minimumScores) => {
   const percentage = (correctAnswers / totalQuestions) * 100;
 
@@ -93,4 +105,7 @@ const calculateGrade = (correctAnswers, totalQuestions, minimumScores) => {
   return grades[grades.length - 1][0];
 };
 
-module.exports = { calculateTotalScore, calculateGrade };
+module.exports = {
+  calculateTotalScore,
+  calculateGrade,
+};
