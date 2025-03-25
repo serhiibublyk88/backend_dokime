@@ -428,22 +428,24 @@ async function getTestAvailableGroups(req, res) {
 }
 
 // Получение результатов теста
-// controllers/testController.js
+
+// Получение результатов теста
 
 async function getTestResults(req, res, next) {
   try {
     const { testId } = req.params;
 
-    const test = await Test.findById(testId).populate("author", "name").lean();
+    // Загружаем сам тест
+    const test = await Test.findById(testId).populate("author", "username").lean(); // 🔄 name → username
     if (!test) return res.status(404).json({ error: "Test not found" });
 
+    // Загружаем группы и участников (username вместо name)
     const groups = await Group.find({ _id: { $in: test.availableForGroups } })
-      .populate("members", "name")
+      .populate("members", "username") // 🔄 name → username
       .lean();
 
-    const testResults = await TestResult.find({ testId })
-      .populate("userId", "name")
-      .lean();
+    // Загружаем результаты прохождения теста (оставляем без .lean() — нужно userId.username)
+    const testResults = await TestResult.find({ testId }).populate("userId", "username"); // 🔄 name → username
 
     const resultsWithDetails = groups.map((group) => ({
       groupId: group._id,
@@ -456,7 +458,7 @@ async function getTestResults(req, res, next) {
         if (result) {
           return {
             userId: user._id,
-            userName: user.name,
+            userName: user.username, // 🔄 name → username
             hasPassed: true,
             startTime: new Date(result.startTime)
               .toISOString()
@@ -472,7 +474,7 @@ async function getTestResults(req, res, next) {
 
         return {
           userId: user._id,
-          userName: user.name,
+          userName: user.username, // 🔄 name → username
           hasPassed: false,
           startTime: null,
           timeTaken: null,
@@ -493,6 +495,8 @@ async function getTestResults(req, res, next) {
     next(error);
   }
 }
+
+
 
 //  Обновление статуса теста (active / inactive)
 const updateTestStatus = async (req, res) => {

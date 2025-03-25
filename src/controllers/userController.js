@@ -32,6 +32,7 @@ const getAvailableTests = async (req, res, next) => {
   }
 };
 
+// Результаты тестов для пользователя
 async function getUserResults(req, res, next) {
   try {
     const userId = req.user?.id;
@@ -70,7 +71,7 @@ async function getUserResults(req, res, next) {
 }
 
 // Создание новой попытки теста и получение вопросов
-// Создание новой попытки теста и получение вопросов
+
 const createTestAttemptAndGetQuestions = async (req, res, next) => {
   try {
     const { testId } = req.params;
@@ -172,8 +173,9 @@ const submitTestAttempt = async (req, res, next) => {
       attempt.finishedAt = now;
     }
 
-    attempt.timeTaken = Math.round(
-      (attempt.finishedAt - attempt.startedAt) / 60000
+    attempt.timeTaken = Math.max(
+      1,
+      Math.round((attempt.finishedAt - attempt.startedAt) / 60000)
     );
 
     if (isTimeExpired) {
